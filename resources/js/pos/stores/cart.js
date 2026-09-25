@@ -9,6 +9,7 @@ import { enqueue, removeQueuedOpsForRef, countPendingForCart } from '../db/queue
 import { processQueue } from '../sync/engine.js';
 import { apiFetch, ApiError } from '../api/client.js';
 import { useCatalogStore } from './catalog.js';
+import { randomUuid } from '../lib/uuid.js';
 
 function zeroTotals() {
     return {
@@ -86,7 +87,7 @@ export const useCartStore = defineStore('cart', {
         // from what the register already fetched for the floor rather than
         // waiting on a round trip.
         async startNewSale(terminal, saleType = 'pos', dinnerTable = null) {
-            const clientUuid = crypto.randomUUID();
+            const clientUuid = randomUuid();
             const cart = {
                 client_uuid: clientUuid,
                 id: null,
@@ -595,7 +596,7 @@ export const useCartStore = defineStore('cart', {
                 return false;
             }
             if (!this.cart.completeIdempotencyKey) {
-                this.cart.completeIdempotencyKey = crypto.randomUUID();
+                this.cart.completeIdempotencyKey = randomUuid();
             }
             await this._touch();
             await enqueue('complete', this.cart.client_uuid, { idempotency_key: this.cart.completeIdempotencyKey });

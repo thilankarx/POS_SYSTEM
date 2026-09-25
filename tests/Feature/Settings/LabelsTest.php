@@ -53,11 +53,11 @@ it('saves new dimensions and TsplLabelBuilder output reflects them', function ()
         ->and($job)->toContain('GAP 3 mm,0 mm')
         ->and($job)->toContain('DENSITY 10')
         ->and($job)->toContain('REFERENCE 0,0')
-        ->and($job)->toContain('TEXT 112,16,"1",0,1,2,"Test Shop"')
-        ->and($job)->toContain('TEXT 82,44,"2",0,1,1,"Test Widget"')
-        ->and($job)->toContain('BARCODE 92,72,"128",24,2,0,2,2,"123456"')
-        ->and($job)->toContain('TEXT 144,106,"1",0,1,1,"SKU1"')
-        ->and($job)->toContain('TEXT 96,126,"3",0,1,1,"LKR 9.99"');
+        ->and($job)->toContain('TEXT 108,16,"1",0,1,2,"Test Shop"')
+        ->and($job)->toContain('TEXT 82,50,"2",0,1,1,"Test Widget"')
+        ->and($job)->toContain('BARCODE 92,78,"128",26,2,0,2,2,"123456"')
+        ->and($job)->toContain('TEXT 96,126,"3",0,1,1,"LKR 9.99"')
+        ->and($job)->not->toContain('"SKU1"');
 });
 
 it('narrows and centers a long alphanumeric Code 128 barcode to fit the label', function () {
@@ -67,7 +67,7 @@ it('narrows and centers a long alphanumeric Code 128 barcode to fit the label', 
 
     $job = app(TsplLabelBuilder::class)->build('BEV-COLA-330', '1.20', 'BEV-COLA-330');
 
-    expect($job)->toContain('BARCODE 69,80,"128",86,2,0,1,1,"BEV-COLA-330"');
+    expect($job)->toContain('BARCODE 69,86,"128",98,2,0,1,1,"BEV-COLA-330"');
 });
 
 it('centers an odd-length numeric barcode using the printer Code Set C width', function () {
@@ -80,7 +80,7 @@ it('centers an odd-length numeric barcode using the printer Code Set C width', f
     $job = app(TsplLabelBuilder::class)->build('BAK-CROIS', '1.75', '5012345678931');
 
     expect($job)->toContain('TEXT 88,206,"3",0,1,1,"LKR 1.75"')
-        ->and($job)->toContain('BARCODE 91,80,"128",86,2,0,1,1,"5012345678931"');
+        ->and($job)->toContain('BARCODE 91,86,"128",98,2,0,1,1,"5012345678931"');
 });
 
 it('keeps long titles inside a centered printable block', function () {
@@ -96,8 +96,11 @@ it('keeps long titles inside a centered printable block', function () {
     $job = app(TsplLabelBuilder::class)->build('SKU', '9.99', '123456', 'An Extremely Long Product Name That Must Not Clip');
 
     expect($job)->toContain('TEXT 8,20,"1",0,1,2,"A Store Name That Is Much Too..."')
-        ->and($job)->toContain('TEXT 8,48,"2",0,1,1,"An Extremely Long P..."')
-        ->and($job)->toContain('TEXT 76,166,"3",0,1,1,"LKR 9.99"');
+        ->and($job)->toContain('TEXT 26,48,"2",0,1,1,"An Extremely Long"')
+        ->and($job)->toContain('TEXT 8,70,"2",0,1,1,"Product Name That M..."')
+        ->and($job)->toContain('BARCODE 72,98,"128",46,2,0,2,2,"123456"')
+        ->and($job)->toContain('TEXT 76,166,"3",0,1,1,"LKR 9.99"')
+        ->and($job)->not->toContain('"SKU"');
 });
 
 it('requires a positive width', function () {

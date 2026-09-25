@@ -22,7 +22,9 @@ class TsplLabelBuilder
 
     private const HORIZONTAL_MARGIN_DOTS = 8;
 
-    private const SMALL_FONT_LEFT_CORRECTION_DOTS = 12;
+    private const TITLE_LEFT_CORRECTION_DOTS = 16;
+
+    private const PRODUCT_NAME_LEFT_CORRECTION_DOTS = 12;
 
     public function __construct(
         private readonly LabelSettings $settings,
@@ -45,28 +47,32 @@ class TsplLabelBuilder
         // clips a long shop title on 35 mm stock. Font 1 at double height keeps
         // the title prominent while leaving reliable horizontal margins.
         $shopName = $this->truncate($this->escape($this->business->store_name), 8, $textBlockWidth);
-        $name = $this->truncate($this->escape($name), 12, $textBlockWidth);
-        $sku = $this->truncate($this->escape($sku), 8, $textBlockWidth);
+        $nameLines = $this->wrapLines(
+            $this->escape($name),
+            12,
+            $textBlockWidth,
+            $labelHeightDots >= 200 ? 2 : 1,
+        );
         $price = $this->truncate($this->escape(Money::currency().' '.$price), 16, $textBlockWidth);
         $barcode = $this->escape($barcode);
 
         // This printer renders built-in fonts 1 and 2 to the right of their
         // documented advance width. Correct those two display lines without
         // disturbing the already-centered barcode, SKU, or price.
-        $shopNameX = $this->centeredTextX($shopName, 8, $labelWidthDots, -self::SMALL_FONT_LEFT_CORRECTION_DOTS);
-        $nameX = $this->centeredTextX($name, 12, $labelWidthDots, -self::SMALL_FONT_LEFT_CORRECTION_DOTS);
-        $skuX = $this->centeredTextX($sku, 8, $labelWidthDots);
+        $shopNameX = $this->centeredTextX($shopName, 8, $labelWidthDots, -self::TITLE_LEFT_CORRECTION_DOTS);
         $priceX = $this->centeredTextX($price, 16, $labelWidthDots);
         [$barcodeX, $moduleWidth] = $this->centeredBarcode($barcode, $labelWidthDots);
 
         // Keep a physical top margin: this printer clips glyphs placed at
         // y=8 even though that coordinate is theoretically printable.
         $shopNameY = max(12, (int) round($labelHeightDots * 0.10));
-        $nameY = $shopNameY + 28;
-        $barcodeY = $nameY + 28;
         $priceY = $labelHeightDots - 34;
-        $skuY = $priceY - 20;
-        $barcodeHeight = max(24, $skuY - $barcodeY - 20);
+        $nameYPositions = count($nameLines) > 1
+            ? [$shopNameY + 28, $shopNameY + 50]
+            : [$shopNameY + 34];
+        $lastNameY = $nameYPositions[count($nameLines) - 1] ?? ($shopNameY + 34);
+        $barcodeY = $lastNameY + 28;
+        $barcodeHeight = max(24, $priceY - $barcodeY - 22);
 
         $lines = [
             "SIZE {$width} mm,{$height} mm",
@@ -81,12 +87,12 @@ class TsplLabelBuilder
             $lines[] = "TEXT {$shopNameX},{$shopNameY},\"1\",0,1,2,\"{$shopName}\"";
         }
 
-        if ($name !== '') {
-            $lines[] = "TEXT {$nameX},{$nameY},\"2\",0,1,1,\"{$name}\"";
+        foreach ($nameLines as $index => $nameLine) {
+            $nameX = $this->centeredTextX($nameLine, 12, $labelWidthDots, -self::PRODUCT_NAME_LEFT_CORRECTION_DOTS);
+            $lines[] = "TEXT {$nameX},{$nameYPositions[$index]},\"2\",0,1,1,\"{$nameLine}\"";
         }
 
         $lines[] = "BARCODE {$barcodeX},{$barcodeY},\"128\",{$barcodeHeight},2,0,{$moduleWidth},{$moduleWidth},\"{$barcode}\"";
-        $lines[] = "TEXT {$skuX},{$skuY},\"1\",0,1,1,\"{$sku}\"";
         $lines[] = "TEXT {$priceX},{$priceY},\"3\",0,1,1,\"{$price}\"";
         $lines[] = 'PRINT 1,1';
         $lines[] = '';
@@ -131,6 +137,28 @@ class TsplLabelBuilder
         return $maxChars > 3
             ? rtrim(substr($value, 0, $maxChars - 3)).'...'
             : substr($value, 0, $maxChars);
+    }
+
+    /** @return list<string> */
+    private function wrapLines(string $value, int $fontWidth, int $labelWidth, int $maximumLines): array
+    {
+        $value = trim($value);
+        if ($value === '') {
+            return [];
+        }
+
+        $maxChars = max(1, intdiv($labelWidth, $fontWidth));
+        $wrapped = explode("\n", wordwrap($value, $maxChars, "\n", true));
+
+        if (count($wrapped) <= $maximumLines) {
+            return $wrapped;
+        }
+
+        $lines = array_slice($wrapped, 0, $maximumLines);
+        $remaining = implode(' ', array_slice($wrapped, $maximumLines - 1));
+        $lines[$maximumLines - 1] = $this->truncate($remaining, $fontWidth, $labelWidth);
+
+        return $lines;
     }
 
     /** @return array{int, int} X coordinate and narrow/wide module width. */

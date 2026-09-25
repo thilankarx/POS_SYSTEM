@@ -29,8 +29,14 @@ const lookupError = ref(null);
 const looking = ref(false);
 const searchResults = ref([]);
 const activeCategoryId = ref(null);
+const categoryStrip = ref(null);
+const categoryFilterInput = ref(null);
+const categoryPanelOpen = ref(false);
+const categoryFilter = ref('');
+const categoryStripEdges = reactive({ left: false, right: false });
 const highlightedIndex = ref(0);
 const searchInput = ref(null);
+const searchResultsList = ref(null);
 const gridContainer = ref(null);
 const showParkedDrawer = ref(false);
 
@@ -131,6 +137,8 @@ onMounted(async () => {
         await focusSearch();
     }
     window.addEventListener('keydown', onRegisterKeydown);
+    window.addEventListener('resize', updateCategoryStripEdges);
+    updateCategoryStripEdges();
     document.addEventListener('mousemove', resetIdleTimer);
     document.addEventListener('keydown', resetIdleTimer);
     document.addEventListener('touchstart', resetIdleTimer);
@@ -139,6 +147,7 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
     window.removeEventListener('keydown', onRegisterKeydown);
+    window.removeEventListener('resize', updateCategoryStripEdges);
     document.removeEventListener('mousemove', resetIdleTimer);
     document.removeEventListener('keydown', resetIdleTimer);
     document.removeEventListener('touchstart', resetIdleTimer);
@@ -159,6 +168,8 @@ function onRegisterKeydown(event) {
         event.preventDefault();
         if (showShortcuts.value) {
             showShortcuts.value = false;
+        } else if (categoryPanelOpen.value) {
+            closeCategoryPanel();
         } else if (showParkedDrawer.value) {
             showParkedDrawer.value = false;
         } else if (searchResults.value.length) {
@@ -577,6 +588,11 @@ function moveHighlight(delta) {
     }
     const count = searchResults.value.length;
     highlightedIndex.value = (highlightedIndex.value + delta + count) % count;
+    nextTick(() => {
+        searchResultsList.value
+            ?.querySelector(`[data-result-index="${highlightedIndex.value}"]`)
+            ?.scrollIntoView({ block: 'nearest' });
+    });
 }
 
 function clearSearch() {
@@ -609,6 +625,85 @@ const gridItems = computed(() => {
     }
     return items;
 });
+
+// Counted from the full cached catalog, so empty categories can be hidden
+// from the picker instead of leading the cashier to a blank grid.
+const categoryItemCounts = computed(() => {
+    const counts = new Map();
+    for (const item of catalog.items) {
+        counts.set(item.category_id, (counts.get(item.category_id) ?? 0) + 1);
+    }
+    return counts;
+});
+
+const stockedCategories = computed(() =>
+    categories.categories.filter(
+        (category) => (categoryItemCounts.value.get(category.id) ?? 0) > 0 || category.id === activeCategoryId.value,
+    ),
+);
+
+const filteredCategories = computed(() => {
+    const needle = categoryFilter.value.trim().toLowerCase();
+    return needle
+        ? stockedCategories.value.filter((category) => category.name.toLowerCase().includes(needle))
+        : stockedCategories.value;
+});
+
+function selectCategory(id) {
+    activeCategoryId.value = id;
+    closeCategoryPanel();
+    nextTick(() => {
+        categoryStrip.value
+            ?.querySelector(`[data-category-id="${id ?? 'all'}"]`)
+            ?.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'smooth' });
+    });
+}
+
+function toggleCategoryPanel() {
+    if (categoryPanelOpen.value) {
+        closeCategoryPanel();
+        return;
+    }
+    categoryPanelOpen.value = true;
+    nextTick(() => categoryFilterInput.value?.focus());
+}
+
+function closeCategoryPanel() {
+    categoryPanelOpen.value = false;
+    categoryFilter.value = '';
+}
+
+function pickFirstFilteredCategory() {
+    if (filteredCategories.value.length) {
+        selectCategory(filteredCategories.value[0].id);
+    }
+}
+
+function updateCategoryStripEdges() {
+    const strip = categoryStrip.value;
+    if (!strip) {
+        return;
+    }
+    categoryStripEdges.left = strip.scrollLeft > 1;
+    categoryStripEdges.right = strip.scrollLeft + strip.clientWidth < strip.scrollWidth - 1;
+}
+
+function scrollCategoryStrip(direction) {
+    const strip = categoryStrip.value;
+    strip?.scrollBy({ left: direction * strip.clientWidth * 0.8, behavior: 'smooth' });
+}
+
+// A plain mouse wheel only emits deltaY, which a horizontal strip ignores.
+function onCategoryStripWheel(event) {
+    const strip = categoryStrip.value;
+    if (!strip || Math.abs(event.deltaX) >= Math.abs(event.deltaY)) {
+        return;
+    }
+    event.preventDefault();
+    strip.scrollLeft += event.deltaY;
+}
+
+watch(stockedCategories, () => nextTick(updateCategoryStripEdges));
 
 async function addFromGrid(item) {
     await ensureCart();
@@ -1085,17 +1180,19 @@ async function sendToKitchen() {
                                 Search
                             </button>
                         </div>
-                        <div v-if="searchResults.length" class="absolute z-20 mt-1.5 w-full overflow-hidden rounded-xl border border-slate-700 bg-slate-900 shadow-2xl">
+                        <div v-if="searchResults.length" class="absolute z-20 mt-1.5 flex max-h-[min(24rem,60dvh)] w-full flex-col overflow-hidden rounded-xl border border-slate-700 bg-slate-900 shadow-2xl">
                             <div class="flex items-center justify-between border-b border-slate-800 px-3.5 py-1.5 text-[11px] font-medium uppercase tracking-wide text-slate-500">
                                 <span>{{ searchResults.length }} matches</span>
                                 <span class="hidden sm:inline">↑↓ move · ↵ add · Esc close</span>
                             </div>
+                            <div ref="searchResultsList" class="min-h-0 flex-1 overflow-y-auto overscroll-contain">
                             <button
                                 v-for="(result, index) in searchResults"
                                 :key="`${result.kind}-${result.id}`"
                                 type="button"
                                 class="flex w-full items-center justify-between gap-3 px-3.5 py-3 text-left transition"
                                 :class="index === highlightedIndex ? 'bg-emerald-500/15' : 'hover:bg-slate-800'"
+                                :data-result-index="index"
                                 @click="pickSearchResult(result)"
                                 @mousemove="highlightedIndex = index"
                             >
@@ -1128,6 +1225,7 @@ async function sendToKitchen() {
                                     {{ formatMoney(result.kind === 'kit' ? estimatedKitTotal(result) : result.unit_price, cart.cart.currency) }}
                                 </span>
                             </button>
+                            </div>
                         </div>
                     </div>
                     <div v-if="lookupError" class="mb-2 flex items-center gap-2 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-300">
@@ -1137,25 +1235,114 @@ async function sendToKitchen() {
                         <span>{{ lookupError }}</span>
                     </div>
 
-                    <div class="mb-3 flex gap-2 overflow-x-auto pb-1">
-                        <button
-                            type="button"
-                            class="shrink-0 rounded-full px-3.5 py-1.5 text-sm font-medium transition"
-                            :class="activeCategoryId === null ? 'bg-emerald-500 text-slate-950' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'"
-                            @click="activeCategoryId = null"
-                        >
-                            All
-                        </button>
-                        <button
-                            v-for="category in categories.categories"
-                            :key="category.id"
-                            type="button"
-                            class="shrink-0 rounded-full px-3.5 py-1.5 text-sm font-medium transition"
-                            :class="activeCategoryId === category.id ? 'bg-emerald-500 text-slate-950' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'"
-                            @click="activeCategoryId = category.id"
-                        >
-                            {{ category.name }}
-                        </button>
+                    <div class="mb-3">
+                        <div class="flex items-center gap-2">
+                            <div class="relative min-w-0 flex-1">
+                                <div
+                                    ref="categoryStrip"
+                                    class="flex gap-2 overflow-x-auto scroll-smooth [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+                                    @scroll.passive="updateCategoryStripEdges"
+                                    @wheel="onCategoryStripWheel"
+                                >
+                                    <button
+                                        type="button"
+                                        data-category-id="all"
+                                        class="shrink-0 whitespace-nowrap rounded-full px-3.5 py-1.5 text-sm font-medium transition"
+                                        :class="activeCategoryId === null ? 'bg-emerald-500 text-slate-950' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'"
+                                        @click="selectCategory(null)"
+                                    >
+                                        All
+                                        <span class="ml-1 text-xs opacity-70">{{ catalog.items.length }}</span>
+                                    </button>
+                                    <button
+                                        v-for="category in stockedCategories"
+                                        :key="category.id"
+                                        type="button"
+                                        :data-category-id="category.id"
+                                        class="shrink-0 whitespace-nowrap rounded-full px-3.5 py-1.5 text-sm font-medium transition"
+                                        :class="activeCategoryId === category.id ? 'bg-emerald-500 text-slate-950' : 'bg-slate-800 text-slate-300 hover:bg-slate-700'"
+                                        @click="selectCategory(category.id)"
+                                    >
+                                        {{ category.name }}
+                                        <span class="ml-1 text-xs opacity-70">{{ categoryItemCounts.get(category.id) ?? 0 }}</span>
+                                    </button>
+                                </div>
+                                <button
+                                    v-show="categoryStripEdges.left"
+                                    type="button"
+                                    class="absolute inset-y-0 left-0 flex w-10 items-center justify-start bg-gradient-to-r from-slate-950 via-slate-950/90 to-transparent text-slate-300 hover:text-white"
+                                    aria-label="Scroll categories left"
+                                    @click="scrollCategoryStrip(-1)"
+                                >
+                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+                                        <path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7" />
+                                    </svg>
+                                </button>
+                                <button
+                                    v-show="categoryStripEdges.right"
+                                    type="button"
+                                    class="absolute inset-y-0 right-0 flex w-10 items-center justify-end bg-gradient-to-l from-slate-950 via-slate-950/90 to-transparent text-slate-300 hover:text-white"
+                                    aria-label="Scroll categories right"
+                                    @click="scrollCategoryStrip(1)"
+                                >
+                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+                                        <path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7" />
+                                    </svg>
+                                </button>
+                            </div>
+                            <button
+                                type="button"
+                                class="flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-1.5 text-sm font-medium transition"
+                                :class="categoryPanelOpen ? 'border-emerald-500 bg-emerald-500/15 text-emerald-300' : 'border-slate-700 text-slate-300 hover:border-slate-500 hover:text-white'"
+                                :aria-expanded="categoryPanelOpen"
+                                @click="toggleCategoryPanel"
+                            >
+                                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="M4 6h6v6H4zM14 6h6v6h-6zM4 16h6v4H4zM14 16h6v4h-6z" />
+                                </svg>
+                                <span class="hidden sm:inline">Browse</span>
+                            </button>
+                        </div>
+
+                        <div v-if="categoryPanelOpen" class="mt-2 flex max-h-[50dvh] flex-col overflow-hidden rounded-xl border border-slate-700 bg-slate-900 shadow-2xl">
+                            <div class="border-b border-slate-800 p-2.5">
+                                <input
+                                    ref="categoryFilterInput"
+                                    v-model="categoryFilter"
+                                    type="text"
+                                    placeholder="Find a category…"
+                                    class="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white placeholder:text-slate-500 focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-500/30"
+                                    @keydown.enter.prevent="pickFirstFilteredCategory"
+                                />
+                            </div>
+                            <div class="min-h-0 flex-1 overflow-y-auto overscroll-contain p-2.5">
+                                <div class="grid grid-cols-2 gap-1.5 sm:grid-cols-3 xl:grid-cols-4">
+                                    <button
+                                        v-if="!categoryFilter.trim()"
+                                        type="button"
+                                        class="flex items-center justify-between gap-2 rounded-lg px-3 py-2.5 text-left text-sm font-medium transition"
+                                        :class="activeCategoryId === null ? 'bg-emerald-500 text-slate-950' : 'bg-slate-800 text-slate-200 hover:bg-slate-700'"
+                                        @click="selectCategory(null)"
+                                    >
+                                        <span class="truncate">All items</span>
+                                        <span class="shrink-0 text-xs opacity-70">{{ catalog.items.length }}</span>
+                                    </button>
+                                    <button
+                                        v-for="category in filteredCategories"
+                                        :key="category.id"
+                                        type="button"
+                                        :title="category.name"
+                                        class="flex items-center justify-between gap-2 rounded-lg px-3 py-2.5 text-left text-sm font-medium transition"
+                                        :class="activeCategoryId === category.id ? 'bg-emerald-500 text-slate-950' : 'bg-slate-800 text-slate-200 hover:bg-slate-700'"
+                                        @click="selectCategory(category.id)"
+                                    >
+                                        <span class="truncate">{{ category.name }}</span>
+                                        <span class="shrink-0 text-xs opacity-70">{{ categoryItemCounts.get(category.id) ?? 0 }}</span>
+                                    </button>
+                                </div>
+                                <p v-if="!filteredCategories.length" class="py-6 text-center text-sm text-slate-500">No categories match “{{ categoryFilter }}”.</p>
+                            </div>
+                        </div>
                     </div>
 
                     <div class="min-h-0 flex-1 overflow-y-auto pr-1">
