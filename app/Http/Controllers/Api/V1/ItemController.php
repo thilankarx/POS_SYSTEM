@@ -27,12 +27,16 @@ class ItemController extends Controller
             ->with('barcodes')
             ->when($request->filled('stock_location_id'), fn (Builder $query) => $query->with('stockLevels'))
             ->when($request->filled('q'), function (Builder $query) use ($request) {
-                $term = '%'.$request->string('q').'%';
-                $query->where(fn (Builder $inner) => $inner
-                    ->where('name', 'like', $term)
-                    ->orWhere('sku', 'like', $term)
-                    ->orWhereHas('barcodes', fn (Builder $barcodes) => $barcodes
-                        ->where('barcode', 'like', $term)));
+                // Every word must appear somewhere, in any order, so
+                // "cpvc 1/2" finds "CPVC Pipe 1/2\"".
+                foreach (preg_split('/\s+/', $request->string('q')->trim()->value()) as $word) {
+                    $term = '%'.$word.'%';
+                    $query->where(fn (Builder $inner) => $inner
+                        ->where('name', 'like', $term)
+                        ->orWhere('sku', 'like', $term)
+                        ->orWhereHas('barcodes', fn (Builder $barcodes) => $barcodes
+                            ->where('barcode', 'like', $term)));
+                }
             })
             ->orderBy('name')
             ->paginate(max(1, min($request->integer('per_page', 25), 100)));

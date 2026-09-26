@@ -43,6 +43,17 @@ it('filters by name and by sku', function () {
     expect(collect($bySku)->pluck('sku'))->toContain('BEV-WATER-500');
 });
 
+it('matches every word of a multi-word search in any order', function () {
+    Item::where('sku', 'BEV-COLA-330')->firstOrFail()->update(['name' => 'CPVC Pipe 1/2"']);
+
+    Sanctum::actingAs($this->cashier, ['*']);
+    $skus = fn (string $q) => collect($this->getJson('/api/v1/items?q='.urlencode($q))->assertOk()->json('data'))->pluck('sku');
+
+    expect($skus('cpvc 1/2'))->toContain('BEV-COLA-330')
+        ->and($skus('1/2 cpvc'))->toContain('BEV-COLA-330')
+        ->and($skus('cpvc 3/4'))->not->toContain('BEV-COLA-330');
+});
+
 it('filters by barcode when a scanner submits through the search field', function () {
     $item = Item::where('sku', 'BAK-CROIS')->firstOrFail();
     $barcode = $item->barcodes()->firstOrFail();

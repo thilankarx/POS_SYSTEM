@@ -716,7 +716,7 @@ it('refuses to attach a customer to a suspended cart', function () {
         ->assertStatus(422);
 });
 
-it('lists suspended carts at the terminal stock location, excluding its own terminal and other locations', function () {
+it('lists suspended carts at the terminal stock location, excluding its own terminal, other locations and empty carts', function () {
     $shift = openShiftFor($this->cashier, $this->terminal);
     $location = StockLocation::where('code', 'MAIN')->firstOrFail();
     $warehouse = StockLocation::where('code', 'WH')->firstOrFail();
@@ -724,6 +724,28 @@ it('lists suspended carts at the terminal stock location, excluding its own term
 
     // Parked by a different terminal at the same location -> should appear.
     $otherTerminalSameLocation = Cart::create([
+        'client_uuid' => (string) Str::uuid(),
+        'terminal_id' => $secondTerminal->id,
+        'shift_id' => $shift->id,
+        'stock_location_id' => $location->id,
+        'user_id' => $this->cashier->id,
+        'sale_type' => 'pos',
+        'status' => Cart::STATUS_SUSPENDED,
+        'suspended_at' => now(),
+        'suspended_by_user_id' => $this->cashier->id,
+    ]);
+    $item = Item::where('sku', 'BEV-COLA-330')->firstOrFail();
+    $otherTerminalSameLocation->lines()->create([
+        'line_number' => 1,
+        'item_id' => $item->id,
+        'stock_location_id' => $location->id,
+        'quantity' => '1',
+        'unit_price' => demoPriceFor($item),
+        'cost_price' => demoPriceFor($item, 'cost_price'),
+    ]);
+
+    // Parked with nothing on it -> nothing to resume, must not show up.
+    Cart::create([
         'client_uuid' => (string) Str::uuid(),
         'terminal_id' => $secondTerminal->id,
         'shift_id' => $shift->id,

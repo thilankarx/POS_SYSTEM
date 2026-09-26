@@ -24,6 +24,10 @@ function readTerminalStockLocationId() {
     }
 }
 
+function searchWords(term) {
+    return term.toLowerCase().split(/\s+/).filter(Boolean);
+}
+
 export const useCatalogStore = defineStore('catalog', {
     state: () => ({
         items: readCached(),
@@ -31,17 +35,21 @@ export const useCatalogStore = defineStore('catalog', {
     }),
     getters: {
         byBarcode: (state) => (barcode) => state.items.find((item) => (item.barcodes ?? []).includes(barcode)),
+        // Same word-by-word matching as the /items and /item-kits APIs, so
+        // "cpvc 1/2" finds the same things offline as online.
         search: (state) => (term) => {
-            const needle = term.toLowerCase();
-            return state.items.filter(
-                (item) => item.name.toLowerCase().includes(needle) || item.sku.toLowerCase().includes(needle),
-            );
+            const needles = searchWords(term);
+            return state.items.filter((item) => needles.every(
+                (needle) => item.name.toLowerCase().includes(needle)
+                    || item.sku.toLowerCase().includes(needle)
+                    || (item.barcodes ?? []).some((barcode) => barcode.toLowerCase().includes(needle)),
+            ));
         },
         searchKits: (state) => (term) => {
-            const needle = term.toLowerCase();
-            return state.kits.filter(
-                (kit) => kit.name.toLowerCase().includes(needle) || kit.kit_number.toLowerCase().includes(needle),
-            );
+            const needles = searchWords(term);
+            return state.kits.filter((kit) => needles.every(
+                (needle) => kit.name.toLowerCase().includes(needle) || kit.kit_number.toLowerCase().includes(needle),
+            ));
         },
     },
     actions: {

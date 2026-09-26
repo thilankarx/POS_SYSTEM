@@ -20,10 +20,13 @@ class ItemKitController extends Controller
             ->with('items')
             ->forBusinessType(app(BusinessProfileSettings::class)->business_type)
             ->when($request->filled('q'), function (Builder $query) use ($request) {
-                $term = '%'.$request->string('q').'%';
-                $query->where(fn (Builder $inner) => $inner
-                    ->where('name', 'like', $term)
-                    ->orWhere('kit_number', 'like', $term));
+                // Every word must appear somewhere, in any order -- same as items.
+                foreach (preg_split('/\s+/', $request->string('q')->trim()->value()) as $word) {
+                    $term = '%'.$word.'%';
+                    $query->where(fn (Builder $inner) => $inner
+                        ->where('name', 'like', $term)
+                        ->orWhere('kit_number', 'like', $term));
+                }
             })
             ->orderBy('name')
             ->paginate(max(1, min($request->integer('per_page', 25), 100)));

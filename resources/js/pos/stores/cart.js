@@ -21,6 +21,10 @@ function zeroTotals() {
     };
 }
 
+function isEmptyCart(cart) {
+    return (cart.lines ?? []).length === 0 && (cart.payments ?? []).length === 0;
+}
+
 let tempIdCounter = 0;
 function nextTempId() {
     tempIdCounter += 1;
@@ -74,11 +78,36 @@ export const useCartStore = defineStore('cart', {
     actions: {
         async refreshParked() {
             const all = await getAllCartSnapshots();
-            this.parked = all.filter(
+            const setAside = all.filter(
                 (candidate) =>
                     candidate.client_uuid !== this.cart?.client_uuid &&
                     (candidate.status === 'active' || candidate.status === 'suspended'),
             );
+            // Empty carts left behind (from before parking abandoned them,
+            // or from a sale started over an empty one) are nothing to come
+            // back to -- abandon them rather than list them.
+            for (const candidate of setAside.filter(isEmptyCart)) {
+                await this._abandonSnapshot(candidate);
+            }
+            this.parked = setAside.filter((candidate) => !isEmptyCart(candidate));
+        },
+
+        // Abandons the current cart if nothing was ever rung up on it, so
+        // switching away from it (new sale, park, resume) never leaves an
+        // empty cart behind in the Parked list.
+        async _dropCurrentIfEmpty() {
+            if (!this.cart || !isEmptyCart(this.cart)) {
+                return false;
+            }
+            await this._abandonSnapshot(this.cart);
+            this.cart = null;
+            return true;
+        },
+
+        async _abandonSnapshot(snapshot) {
+            snapshot.status = 'abandoned';
+            await saveCartSnapshot(snapshot);
+            await enqueue('abandon', snapshot.client_uuid, {});
         },
 
         // dinnerTable is the full { id, name } tile the cashier tapped, not
@@ -87,6 +116,7 @@ export const useCartStore = defineStore('cart', {
         // from what the register already fetched for the floor rather than
         // waiting on a round trip.
         async startNewSale(terminal, saleType = 'pos', dinnerTable = null) {
+            await this._dropCurrentIfEmpty();
             const clientUuid = randomUuid();
             const cart = {
                 client_uuid: clientUuid,
@@ -125,6 +155,13 @@ export const useCartStore = defineStore('cart', {
             if (!this.cart) {
                 return;
             }
+            // Nothing to come back to -- abandon an empty cart instead of
+            // cluttering the Parked list (idle auto-park hits this a lot).
+            if (await this._dropCurrentIfEmpty()) {
+                await this.sync();
+                await this.refreshParked();
+                return;
+            }
             // Marks the cart suspended server-side (not just locally set aside)
             // so it becomes discoverable by other terminals via
             // `listOtherTerminalCarts()` -- without this it would only ever
@@ -154,6 +191,7 @@ export const useCartStore = defineStore('cart', {
                 return;
             }
 
+            await this._dropCurrentIfEmpty();
             this.cart = snapshot;
 
             if (snapshot.status === 'suspended') {
@@ -216,6 +254,7 @@ export const useCartStore = defineStore('cart', {
                 lines: res.data.lines.map((line) => ({ ...line, _tempId: nextTempId() })),
                 payments: res.data.payments.map((payment) => ({ ...payment, _tempId: nextTempId() })),
             };
+            await this._dropCurrentIfEmpty();
             await saveCartSnapshot(cart);
             this.cart = cart;
             await this.sync();

@@ -34,7 +34,9 @@ class CartController extends Controller
         // terminal id here.
         abort_unless($request->user()->canOperateAt($terminal->stock_location_id), 403);
 
+        // An empty cart is nothing to resume, so don't offer it.
         $carts = Cart::suspended()
+            ->has('lines')
             ->where('stock_location_id', $terminal->stock_location_id)
             ->where('terminal_id', '!=', $terminal->id)
             ->with(['lines.item', 'payments.method', 'customer.person', 'dinnerTable'])

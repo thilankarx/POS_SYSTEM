@@ -41,7 +41,7 @@ vi.mock('../api/client.js', () => ({
 
 import { useCartStore } from './cart.js';
 import { enqueue, removeQueuedOpsForRef } from '../db/queue.js';
-import { getCartSnapshot } from '../db/database.js';
+import { getAllCartSnapshots, getCartSnapshot } from '../db/database.js';
 import { apiFetch } from '../api/client.js';
 
 beforeEach(() => {
@@ -410,12 +410,60 @@ describe('cart store', () => {
     it('parking a cart marks it suspended and queues a suspend op', async () => {
         const store = useCartStore();
         await store.startNewSale({ id: 1, stock_location_id: 2 });
+        store.cart.lines.push({ id: 1, item_id: 1, quantity: '1', unit_price: '1.00' });
         const clientUuid = store.cart.client_uuid;
 
         await store.parkCurrent();
 
         expect(enqueue).toHaveBeenCalledWith('suspend', clientUuid, {});
         expect(store.cart).toBeNull();
+    });
+
+    it('parking an empty cart abandons it instead of suspending it', async () => {
+        const store = useCartStore();
+        await store.startNewSale({ id: 1, stock_location_id: 2 });
+        const clientUuid = store.cart.client_uuid;
+
+        await store.parkCurrent();
+
+        expect(enqueue).toHaveBeenCalledWith('abandon', clientUuid, {});
+        expect(enqueue).not.toHaveBeenCalledWith('suspend', clientUuid, {});
+        expect(store.cart).toBeNull();
+    });
+
+    it('starting a new sale over an empty cart abandons the empty one', async () => {
+        const store = useCartStore();
+        await store.startNewSale({ id: 1, stock_location_id: 2 });
+        const emptyUuid = store.cart.client_uuid;
+
+        await store.startNewSale({ id: 1, stock_location_id: 2 });
+
+        expect(enqueue).toHaveBeenCalledWith('abandon', emptyUuid, {});
+        expect(store.cart.client_uuid).not.toBe(emptyUuid);
+    });
+
+    it('starting a new sale over a cart with lines leaves it set aside', async () => {
+        const store = useCartStore();
+        await store.startNewSale({ id: 1, stock_location_id: 2 });
+        store.cart.lines.push({ id: 1, item_id: 1, quantity: '1', unit_price: '1.00' });
+        const busyUuid = store.cart.client_uuid;
+
+        await store.startNewSale({ id: 1, stock_location_id: 2 });
+
+        expect(enqueue).not.toHaveBeenCalledWith('abandon', busyUuid, {});
+    });
+
+    it('leaves empty carts out of the parked list and abandons them', async () => {
+        const store = useCartStore();
+        const empty = { client_uuid: 'empty-1', status: 'active', lines: [], payments: [] };
+        const busy = { client_uuid: 'busy-1', status: 'suspended', lines: [{ id: 1 }], payments: [] };
+        getAllCartSnapshots.mockImplementationOnce(async () => [empty, busy]);
+
+        await store.refreshParked();
+
+        expect(store.parked.map((cart) => cart.client_uuid)).toEqual(['busy-1']);
+        expect(empty.status).toBe('abandoned');
+        expect(enqueue).toHaveBeenCalledWith('abandon', 'empty-1', {});
     });
 
     it('deleting a parked cart marks it abandoned and queues an abandon op', async () => {

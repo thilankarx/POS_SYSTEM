@@ -613,15 +613,9 @@ async function pickSearchResult(result) {
 // which stays reserved for the barcode-precise / disambiguation-dropdown
 // path (Enter or the Search button).
 const gridItems = computed(() => {
-    let items = catalog.items;
+    const items = search.value.trim() ? catalog.search(search.value) : catalog.items;
     if (activeCategoryId.value !== null) {
-        items = items.filter((item) => item.category_id === activeCategoryId.value);
-    }
-    const needle = search.value.trim().toLowerCase();
-    if (needle) {
-        items = items.filter(
-            (item) => item.name.toLowerCase().includes(needle) || item.sku.toLowerCase().includes(needle),
-        );
+        return items.filter((item) => item.category_id === activeCategoryId.value);
     }
     return items;
 });
