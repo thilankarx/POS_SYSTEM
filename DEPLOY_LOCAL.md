@@ -424,8 +424,49 @@ printer is simplest: give it a static IP on the LAN and enter
 target in the back office. Loopback and link-local addresses are
 rejected by validation.
 
-A USB printer must be attached to the machine doing the printing and
-shared/queued through the OS; network printers avoid that.
+**Every print job and cash-drawer kick is sent by the server PC**, not by
+the register's browser. The drawer is cabled to the receipt printer and
+opens on a pulse sent through it, so whichever printer a terminal points
+at is also the drawer that opens.
+
+#### USB printer on a register PC (Windows connector)
+
+A Windows queue name on its own (e.g. `XP80`) means *the printer on the
+server PC*. If Register 2 is configured that way, its receipts print on
+the server's printer and the server's drawer opens. To use the printer
+plugged into Register 2:
+
+1. On **Register 2**: install the printer driver, then Printer
+   properties → Sharing → *Share this printer*, share name e.g. `XP80`.
+   Note the PC's computer name (Settings → System → About), e.g.
+   `REGISTER-2`. Set the network profile to **Private** and turn on
+   *File and printer sharing*.
+2. In the back office, edit terminal `T2` → Connection type **Windows /
+   SMB print queue** → *Computer the printer is plugged into* =
+   `REGISTER-2`, *Printer share name* = `XP80`. (Typing
+   `\\REGISTER-2\XP80` into the share field also works.) It is stored as
+   `smb://REGISTER-2/XP80`.
+3. The Windows account the **web server** runs as must be allowed to
+   print to that share. On the server PC, logged in as that account:
+
+   ```powershell
+   cmdkey /add:REGISTER-2 /user:REGISTER-2\posprint /pass:CHANGE-ME
+   ```
+
+   where `posprint` is a local user on Register 2. If Apache/nginx runs
+   as a Windows service under *Local System*, change the service's
+   *Log On* account to a normal user first; *Local System* cannot use
+   saved credentials and is refused by other PCs.
+4. Test from the server PC: `copy /b somefile.txt \\REGISTER-2\XP80`,
+   then use the register's **Drawer** button.
+
+Credentials are never stored in the app (targets containing `user@` are
+rejected).
+
+#### Network printer
+
+A network (Ethernet/Wi-Fi) ESC/POS printer avoids all of the above: each
+terminal simply points at its own printer's IP.
 
 PDF receipts (`/sales/{sale}/receipt`) work with any ordinary printer
 and need no ESC/POS setup.

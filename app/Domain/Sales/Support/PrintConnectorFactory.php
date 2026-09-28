@@ -6,6 +6,7 @@ namespace App\Domain\Sales\Support;
 
 use App\Domain\Sales\Exceptions\PrintingException;
 use App\Domain\Sales\Models\Terminal;
+use App\Support\Printing\WindowsPrinterTarget;
 use Exception;
 use Mike42\Escpos\PrintConnectors\CupsPrintConnector;
 use Mike42\Escpos\PrintConnectors\NetworkPrintConnector;
@@ -25,7 +26,7 @@ class PrintConnectorFactory
         try {
             return match ($terminal->printer_connector) {
                 Terminal::CONNECTOR_NETWORK => $this->networkConnector($target),
-                Terminal::CONNECTOR_WINDOWS => new WindowsPrintConnector($target),
+                Terminal::CONNECTOR_WINDOWS => new WindowsPrintConnector(WindowsPrinterTarget::normalize($target)),
                 Terminal::CONNECTOR_CUPS => new CupsPrintConnector($target),
                 default => throw PrintingException::printerNotConfigured(),
             };

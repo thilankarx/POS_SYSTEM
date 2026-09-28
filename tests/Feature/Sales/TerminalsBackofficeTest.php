@@ -91,3 +91,79 @@ it('lets an admin delete a terminal', function () {
     expect(Terminal::find($terminal->id))->toBeNull()
         ->and(Terminal::withTrashed()->find($terminal->id))->not->toBeNull();
 });
+
+it('stores a Windows receipt printer on another register PC as an SMB target', function () {
+    Livewire::actingAs($this->admin)
+        ->test(TerminalForm::class)
+        ->set('name', 'Second Counter')
+        ->set('code', 'T6')
+        ->set('stock_location_id', $this->location->id)
+        ->set('printer_connector', 'windows')
+        ->set('printer_host', 'REGISTER-2')
+        ->set('receipt_printer', 'XP80')
+        ->call('save')
+        ->assertHasNoErrors();
+
+    expect(Terminal::where('code', 'T6')->value('receipt_printer'))->toBe('smb://REGISTER-2/XP80');
+});
+
+it('accepts a full UNC path typed into the share field', function () {
+    Livewire::actingAs($this->admin)
+        ->test(TerminalForm::class)
+        ->set('name', 'Third Counter')
+        ->set('code', 'T5')
+        ->set('stock_location_id', $this->location->id)
+        ->set('printer_connector', 'windows')
+        ->set('receipt_printer', '\\\\REGISTER-3\\XP80')
+        ->call('save')
+        ->assertHasNoErrors();
+
+    expect(Terminal::where('code', 'T5')->value('receipt_printer'))->toBe('smb://REGISTER-3/XP80');
+});
+
+it('keeps a server-local Windows queue as a bare share name', function () {
+    Livewire::actingAs($this->admin)
+        ->test(TerminalForm::class)
+        ->set('name', 'Server Counter')
+        ->set('code', 'T4')
+        ->set('stock_location_id', $this->location->id)
+        ->set('printer_connector', 'windows')
+        ->set('receipt_printer', 'XP80')
+        ->call('save')
+        ->assertHasNoErrors();
+
+    expect(Terminal::where('code', 'T4')->value('receipt_printer'))->toBe('XP80');
+});
+
+it('splits a stored SMB target back into host and share when editing', function () {
+    $terminal = Terminal::create([
+        'name' => 'Second Counter',
+        'code' => 'T3X',
+        'stock_location_id' => $this->location->id,
+        'printer_connector' => 'windows',
+        'receipt_printer' => 'smb://REGISTER-2/XP80',
+        'printer_paper_width' => 80,
+        'is_active' => true,
+    ]);
+
+    Livewire::actingAs($this->admin)
+        ->test(TerminalForm::class, ['terminal' => $terminal])
+        ->assertSet('printer_host', 'REGISTER-2')
+        ->assertSet('receipt_printer', 'XP80')
+        ->call('save')
+        ->assertHasNoErrors();
+
+    expect($terminal->fresh()->receipt_printer)->toBe('smb://REGISTER-2/XP80');
+});
+
+it('rejects Windows printer targets with embedded credentials', function () {
+    Livewire::actingAs($this->admin)
+        ->test(TerminalForm::class)
+        ->set('name', 'Bad Counter')
+        ->set('code', 'T2X')
+        ->set('stock_location_id', $this->location->id)
+        ->set('printer_connector', 'windows')
+        ->set('receipt_printer', 'smb://admin:secret@REGISTER-2/XP80')
+        ->call('save')
+        ->assertHasErrors(['receipt_printer']);
+});

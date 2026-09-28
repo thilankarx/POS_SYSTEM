@@ -6,6 +6,7 @@ namespace App\Domain\Inventory\Support;
 
 use App\Domain\Inventory\Exceptions\LabelPrintingException;
 use App\Domain\Inventory\Models\StockLocation;
+use App\Support\Printing\WindowsPrinterTarget;
 use Exception;
 use Mike42\Escpos\PrintConnectors\CupsPrintConnector;
 use Mike42\Escpos\PrintConnectors\NetworkPrintConnector;
@@ -25,7 +26,7 @@ class LabelPrinterConnectorFactory
         try {
             return match ($location->label_printer_connector) {
                 StockLocation::CONNECTOR_NETWORK => $this->networkConnector($target),
-                StockLocation::CONNECTOR_WINDOWS => new WindowsPrintConnector($target),
+                StockLocation::CONNECTOR_WINDOWS => new WindowsPrintConnector(WindowsPrinterTarget::normalize($target)),
                 StockLocation::CONNECTOR_CUPS => new CupsPrintConnector($target),
                 default => throw LabelPrintingException::printerNotConfigured(),
             };

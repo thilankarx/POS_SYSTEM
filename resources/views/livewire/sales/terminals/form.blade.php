@@ -53,12 +53,25 @@
                     </div>
                 </div>
 
+                @if ($printer_connector === 'windows')
+                    <div class="mt-4">
+                        <label for="printer_host" class="mb-1 block text-sm font-medium">Computer the printer is plugged into</label>
+                        <input wire:model.live.debounce.500ms="printer_host" id="printer_host" type="text" placeholder="e.g. REGISTER-2 (leave blank for this server)" class="w-full rounded-md border border-gray-300 px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800">
+                        @if (trim($printer_host) === '')
+                            <p class="mt-1 text-xs text-amber-700 dark:text-amber-400">Blank means the printer and cash drawer on the server PC. If this terminal is a different PC, enter that PC's computer name and share its printer in Windows.</p>
+                        @else
+                            <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Receipts and drawer kicks go to \\{{ trim($printer_host, " \t\\/") }}\{{ $receipt_printer !== '' ? $receipt_printer : 'ShareName' }}.</p>
+                        @endif
+                        @error('printer_host') <p class="mt-1 text-sm text-red-600">{{ $message }}</p> @enderror
+                    </div>
+                @endif
+
                 @if ($printer_connector !== '')
                     <div class="mt-4">
                         <label for="receipt_printer" class="mb-1 block text-sm font-medium">
-                            {{ $printer_connector === 'network' ? 'Printer IP address (e.g. 192.168.1.50:9100)' : 'Print queue name' }}
+                            {{ $printer_connector === 'network' ? 'Printer IP address (e.g. 192.168.1.50:9100)' : ($printer_connector === 'windows' ? 'Printer share name' : 'Print queue name') }}
                         </label>
-                        @if ($printer_connector === 'windows' && $windowsPrinters !== [])
+                        @if ($printer_connector === 'windows' && $windowsPrinters !== [] && trim($printer_host) === '')
                             <select wire:model="receipt_printer" id="receipt_printer" class="w-full rounded-md border border-gray-300 px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800">
                                 <option value="">Select a Windows printer&hellip;</option>
                                 @foreach ($windowsPrinters as $shareName => $printerName)
@@ -68,7 +81,7 @@
                                     <option value="{{ $receipt_printer }}">Current queue ({{ $receipt_printer }})</option>
                                 @endif
                             </select>
-                            <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Only Windows printers shared for raw printing are listed.</p>
+                            <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Printers shared on this server. For a printer on another PC, fill in the computer name above.</p>
                         @else
                             <input wire:model="receipt_printer" id="receipt_printer" type="text" class="w-full rounded-md border border-gray-300 px-3 py-2 text-sm dark:border-gray-600 dark:bg-gray-800">
                         @endif
